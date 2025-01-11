@@ -1,7 +1,6 @@
-use std::{
-    io::{self, BufRead, BufReader, Write},
-    path::PathBuf,
-};
+use std::io::{self, BufRead, BufReader, Write};
+
+use sowm_common::get_pipe_path;
 
 use interprocess::local_socket::{prelude::*, GenericFilePath, ListenerOptions, Stream};
 
@@ -25,7 +24,7 @@ fn main() {
 
     let tmp_path = path.clone();
     ctrlc::set_handler(move || {
-        println!("removing socket: {}", tmp_path.display());
+        println!("\nremoving socket: {}", tmp_path.display());
         if matches!(tmp_path.try_exists(), Ok(true)) {
             std::fs::remove_file(&tmp_path).unwrap();
         }
@@ -67,42 +66,4 @@ fn main() {
         println!("Client: {buf}");
         buf.clear();
     }
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
-enum Command {
-    Reset,
-    Stop,
-    Start,
-    Noop,
-    // Add update config etc
-}
-
-#[allow(dead_code)]
-fn parse_command(command: &str) -> Command {
-    for (ii, word) in command.split_whitespace().enumerate() {
-        if ii == 0 {
-            match word {
-                "reset" => return Command::Reset,
-                "stop" => return Command::Stop,
-                "start" => return Command::Start,
-                _ => return Command::Noop,
-            }
-        }
-    }
-    Command::Noop
-}
-
-fn get_pipe_path() -> PathBuf {
-    let uid = users::get_current_uid();
-    let mut p = PathBuf::new();
-    p.push("/run");
-    p.push("user");
-    p.push(uid.to_string());
-    debug_assert!(p.exists(), "run path doesn't exist: {}", p.display());
-    p.push("sowm.fifo");
-    //p
-    let p = PathBuf::from("./mypipe.sock");
-    p
 }

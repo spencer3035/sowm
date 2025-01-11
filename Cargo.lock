@@ -94,6 +94,14 @@ name = "sowm-cli"
 version = "0.1.0"
 dependencies = [
  "interprocess",
+ "sowm-common",
+ "users",
+]
+
+[[package]]
+name = "sowm-common"
+version = "0.1.0"
+dependencies = [
  "users",
 ]
 
@@ -104,6 +112,7 @@ dependencies = [
  "ctrlc",
  "interprocess",
  "libc",
+ "sowm-common",
  "user",
  "users",
 ]
