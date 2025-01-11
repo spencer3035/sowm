@@ -4,4 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bitcode = { version = "0.6.3", features = ["serde"] }
+homedir = "0.3.4"
+serde = { version = "1.0.217", features = ["derive"] }
 users = "0.11.0"
