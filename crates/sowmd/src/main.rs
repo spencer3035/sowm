@@ -59,11 +59,12 @@ fn main() {
         let mut conn = BufReader::new(conn);
         println!("Got new connection");
 
+        println!("reading client message");
         conn.read_line(&mut buf).unwrap();
+        println!("Sending responce");
+        conn.get_mut().write_all(b"Pong").unwrap();
 
         println!("Client: {buf}");
-
-        conn.get_mut().write_all(b"Pong").unwrap();
         buf.clear();
     }
 }
