@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 use interprocess::local_socket::{prelude::*, GenericFilePath, Stream};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Read, Write};
 
-use sowm_common::{get_pipe_path, ClientMessage};
+use sowm_common::{get_pipe_path, packet::Packet, ClientMessage, ServerMessage};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -39,14 +39,25 @@ fn main() {
     println!("Socket path is {}", path.display());
     let name = path.as_path().to_fs_name::<GenericFilePath>().unwrap();
 
-    let mut buf = String::with_capacity(128);
     let conn = Stream::connect(name).unwrap();
     let mut conn = BufReader::new(conn);
 
-    println!("Writing to server");
-    conn.get_mut().write_all(b"Ping\n").unwrap();
-    println!("Reading server responce");
-    conn.read_line(&mut buf).unwrap();
+    // Send message
+    let message: ClientMessage = cli.command.into();
+    let data = message.serialize();
+    println!("Sending {} + 8 bytes to the server", data.len());
+    let packet = Packet::new(data);
+    let bytes = packet.into_bytes();
+    conn.get_mut().write_all(&bytes).unwrap();
 
-    println!("Server: {buf}");
+    // Get responce message
+    println!("Reading server responce");
+    let mut header: [u8; 8] = [0; 8];
+    conn.read_exact(&mut header).unwrap();
+    let len = Packet::len_from_header(&header).unwrap();
+    let mut buf = vec![0; len];
+    conn.read_exact(&mut buf).unwrap();
+    let message: ServerMessage = ServerMessage::deserialize(&buf);
+
+    println!("Server: {message:#?}");
 }

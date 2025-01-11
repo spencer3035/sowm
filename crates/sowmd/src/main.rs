@@ -1,12 +1,12 @@
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{BufReader, Read, Write};
 
-use sowm_common::get_pipe_path;
+use sowm_common::{get_pipe_path, packet::Packet, ClientMessage, ServerMessage};
 
 use interprocess::local_socket::{prelude::*, GenericFilePath, ListenerOptions, Stream};
 
 // Define a function that checks for errors in incoming connections. We'll use this to filter
 // through connections that fail on initialization for one reason or another.
-fn handle_error(conn: io::Result<Stream>) -> Option<Stream> {
+fn handle_error(conn: std::io::Result<Stream>) -> Option<Stream> {
     match conn {
         Ok(c) => Some(c),
         Err(e) => {
@@ -33,7 +33,7 @@ fn main() {
     .expect("Failed setting exception handler");
 
     let listener = match opts.create_sync() {
-        Err(e) if e.kind() == io::ErrorKind::AddrInUse => {
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
             // When a program that uses a file-type socket name terminates its socket server
             // without deleting the file, a "corpse socket" remains, which can neither be
             // connected to nor reused by a new listener. Normally, Interprocess takes care of
@@ -53,17 +53,28 @@ fn main() {
 
     println!("Socket running on {}", path.display());
 
-    let mut buf = String::with_capacity(128);
     for conn in listener.incoming().filter_map(handle_error) {
         let mut conn = BufReader::new(conn);
         println!("Got new connection");
 
-        println!("reading client message");
-        conn.read_line(&mut buf).unwrap();
-        println!("Sending responce");
-        conn.get_mut().write_all(b"Pong").unwrap();
+        // Get message
+        println!("Reading client message");
+        let mut header: [u8; 8] = [0; 8];
+        conn.read_exact(&mut header).unwrap();
+        let len = Packet::len_from_header(&header).unwrap();
+        let mut buf = vec![0; len];
+        conn.read_exact(&mut buf).unwrap();
+        let message: ClientMessage = ClientMessage::deserialize(&buf);
+        println!("Client Sent: {message:#?}");
 
-        println!("Client: {buf}");
-        buf.clear();
+        // Send responce message
+        let message: ServerMessage = ServerMessage::Ok;
+        let data = message.serialize();
+        println!("Sending {} + 8 bytes to the client", data.len());
+        let packet = Packet::new(data);
+        let bytes = packet.into_bytes();
+        conn.get_mut().write_all(&bytes).unwrap();
+
+        println!("Server: {message:#?}");
     }
 }
