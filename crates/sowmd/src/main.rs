@@ -4,6 +4,9 @@ use sowm_common::{get_pipe_path, packet::Packet, ClientMessage, ServerMessage};
 
 use interprocess::local_socket::{prelude::*, GenericFilePath, ListenerOptions, Stream};
 
+// Example of using feh to set the background for two monitors
+// feh --no-fehbg --bg-fill girl_holding_power.jpg girl_face_in_pool.jpeg
+
 // Define a function that checks for errors in incoming connections. We'll use this to filter
 // through connections that fail on initialization for one reason or another.
 fn handle_error(conn: std::io::Result<Stream>) -> Option<Stream> {

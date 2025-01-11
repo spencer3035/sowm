@@ -5,7 +5,7 @@ edition = "2021"
 default-run = "sowmd"
 
 [dependencies]
-ctrlc = "3.4.5"
+ctrlc = { version = "3.4.5", features = ["termination"] }
 interprocess = "2.2.2"
 libc = "0.2.169"
 user = "0.1.1"
