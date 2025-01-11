@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+pub mod packet;
+
 pub fn get_pipe_path() -> PathBuf {
     let uid = users::get_current_uid();
     let mut p = PathBuf::new();
