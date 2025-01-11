@@ -1,35 +1,74 @@
-use std::{io::Read, path::PathBuf, time::Duration};
+use std::{
+    io::{self, BufRead, BufReader, Write},
+    path::PathBuf,
+};
 
-use interprocess::os::unix::fifo_file::create_fifo;
+use interprocess::local_socket::{prelude::*, GenericFilePath, ListenerOptions, Stream};
+
+// Define a function that checks for errors in incoming connections. We'll use this to filter
+// through connections that fail on initialization for one reason or another.
+fn handle_error(conn: io::Result<Stream>) -> Option<Stream> {
+    match conn {
+        Ok(c) => Some(c),
+        Err(e) => {
+            eprintln!("Incoming connection failed: {e}");
+            None
+        }
+    }
+}
 
 fn main() {
-    let fifo_path = get_pipe_path();
-    println!("Fifo path is {}", fifo_path.display());
-
-    let path = PathBuf::from("./mypipe.fifo");
-    let mode = 0o777;
-    create_fifo(&path, mode).unwrap();
+    let path = get_pipe_path();
+    println!("Socket path is {}", path.display());
+    let name = path.as_path().to_fs_name::<GenericFilePath>().unwrap();
+    let opts = ListenerOptions::new().name(name);
 
     let tmp_path = path.clone();
     ctrlc::set_handler(move || {
-        println!("removing fifo: {}", tmp_path.display());
-        std::fs::remove_file(&tmp_path).unwrap();
+        println!("removing socket: {}", tmp_path.display());
+        if matches!(tmp_path.try_exists(), Ok(true)) {
+            std::fs::remove_file(&tmp_path).unwrap();
+        }
         std::process::exit(0);
     })
     .expect("Failed setting exception handler");
 
-    let mut fifo_file = std::fs::File::open(path).unwrap();
-    let poll_durration = Duration::from_millis(100);
-    loop {
-        let mut contents = String::new();
-        let bytes_read = fifo_file.read_to_string(&mut contents).unwrap();
-        if bytes_read > 0 {
-            println!("read: {contents}");
+    let listener = match opts.create_sync() {
+        Err(e) if e.kind() == io::ErrorKind::AddrInUse => {
+            // When a program that uses a file-type socket name terminates its socket server
+            // without deleting the file, a "corpse socket" remains, which can neither be
+            // connected to nor reused by a new listener. Normally, Interprocess takes care of
+            // this on affected platforms by deleting the socket file when the listener is
+            // dropped. (This is vulnerable to all sorts of races and thus can be disabled.)
+            // There are multiple ways this error can be handled, if it occurs, but when the
+            // listener only comes from Interprocess, it can be assumed that its previous instance
+            // either has crashed or simply hasn't exited yet. In this example, we leave cleanup
+            // up to the user, but in a real application, you usually don't want to do that.
+            panic!(
+                "Error: could not start server because the socket file is occupied. Please check if {} is in use by another process and try again.",
+                path.display()
+            );
         }
-        std::thread::sleep(poll_durration);
+        x => x.unwrap(),
+    };
+
+    println!("Socket running on {}", path.display());
+
+    let mut buf = String::with_capacity(128);
+    for conn in listener.incoming().filter_map(handle_error) {
+        let mut conn = BufReader::new(conn);
+        println!("Got new connection");
+
+        conn.read_line(&mut buf).unwrap();
+
+        println!("Client: {buf}");
+
+        conn.get_mut().write_all(b"Pong").unwrap();
+        buf.clear();
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum Command {
     Reset,
@@ -39,6 +78,7 @@ enum Command {
     // Add update config etc
 }
 
+#[allow(dead_code)]
 fn parse_command(command: &str) -> Command {
     for (ii, word) in command.split_whitespace().enumerate() {
         if ii == 0 {
@@ -61,5 +101,7 @@ fn get_pipe_path() -> PathBuf {
     p.push(uid.to_string());
     debug_assert!(p.exists(), "run path doesn't exist: {}", p.display());
     p.push("sowm.fifo");
+    //p
+    let p = PathBuf::from("./mypipe.sock");
     p
 }
