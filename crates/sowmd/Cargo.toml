@@ -12,3 +12,4 @@ user = "0.1.1"
 users = "0.11.0"
 
 sowm-common = { path = "../sowm-common/" }
+walkdir = "2.5.0"
