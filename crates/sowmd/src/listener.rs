@@ -4,6 +4,8 @@ use std::{
     sync::mpsc::Sender,
 };
 
+use sowm_common::{get_pipe_path, packet::Packet, ClientMessage, ServerMessage};
+
 // Define a function that checks for errors in incoming connections. We'll use this to filter
 // through connections that fail on initialization for one reason or another.
 fn handle_error(conn: std::io::Result<Stream>) -> Option<Stream> {
@@ -15,8 +17,6 @@ fn handle_error(conn: std::io::Result<Stream>) -> Option<Stream> {
         }
     }
 }
-
-use sowm_common::{get_pipe_path, packet::Packet, ClientMessage, ServerMessage};
 
 pub fn listener(tx: Sender<ClientMessage>) -> ! {
     let path = get_pipe_path();

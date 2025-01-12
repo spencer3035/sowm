@@ -13,3 +13,4 @@ users = "0.11.0"
 
 sowm-common = { path = "../sowm-common/" }
 walkdir = "2.5.0"
+rand = "0.8.5"

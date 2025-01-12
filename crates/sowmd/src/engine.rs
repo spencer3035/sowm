@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use rand::{seq::SliceRandom, thread_rng};
 use sowm_common::ClientMessage;
 use walkdir::WalkDir;
 
@@ -11,11 +12,38 @@ use walkdir::WalkDir;
 // feh --no-fehbg --bg-fill girl_holding_power.jpg girl_face_in_pool.jpeg
 
 pub fn run(rx: Receiver<ClientMessage>) -> ! {
-    let dur = Duration::from_secs(60 * 1);
+    let dur = Duration::from_secs(60 * 30);
     let dir = PathBuf::from("/home/spencer/pictures/wallpapers");
-    let images = get_images(&dir);
+    let mut images = get_images(&dir);
+    images.shuffle(&mut thread_rng());
+
+    let mut image_iter = images.iter();
+
+    println!("Found {} images.", images.len());
+
+    let num_monitors = 2;
 
     loop {
+        let mut n = 0;
+        let mut selected_images = Vec::new();
+        while n < num_monitors {
+            if let Some(im) = image_iter.next() {
+                selected_images.push(im);
+                n += 1;
+            } else {
+                // If we run out of images, start from the beginning
+                image_iter = images.iter();
+            }
+        }
+
+        let mut cmd = std::process::Command::new("feh");
+        cmd.arg("--no-fehbg").arg("--bg-fill");
+        for image in selected_images.iter() {
+            cmd.arg(image);
+        }
+        println!("setting images");
+        cmd.spawn().unwrap();
+
         std::thread::sleep(dur);
     }
 }
