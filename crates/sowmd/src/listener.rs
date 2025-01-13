@@ -1,10 +1,10 @@
 use interprocess::local_socket::{prelude::*, GenericFilePath, ListenerOptions, Stream};
 use std::{
     io::{BufReader, Read, Write},
-    sync::mpsc::Sender,
+    sync::{mpsc::Sender, Arc},
 };
 
-use sowm_common::{get_pipe_path, packet::Packet, ClientMessage, ServerMessage};
+use sowm_common::{packet::Packet, ClientMessage, Init, ServerMessage, SowmError};
 
 // Define a function that checks for errors in incoming connections. We'll use this to filter
 // through connections that fail on initialization for one reason or another.
@@ -18,21 +18,23 @@ fn handle_error(conn: std::io::Result<Stream>) -> Option<Stream> {
     }
 }
 
-pub fn listener(tx: Sender<ClientMessage>) -> ! {
-    let path = get_pipe_path();
-    println!("Socket path is {}", path.display());
-    let name = path.as_path().to_fs_name::<GenericFilePath>().unwrap();
-    let opts = ListenerOptions::new().name(name);
-
-    let tmp_path = path.clone();
+pub fn setup_signal_handler(init: &Init) {
+    let path = init.socket_file.to_path_buf();
     ctrlc::set_handler(move || {
-        println!("\nremoving socket: {}", tmp_path.display());
-        if matches!(tmp_path.try_exists(), Ok(true)) {
-            std::fs::remove_file(&tmp_path).unwrap();
+        println!("\nremoving socket: {}", path.display());
+        if matches!(path.try_exists(), Ok(true)) {
+            std::fs::remove_file(&path).unwrap();
         }
         std::process::exit(0);
     })
-    .expect("Failed setting exception handler");
+    .expect("Signal handler should only be called once");
+}
+
+pub fn open_socket(init: &Init) -> Result<LocalSocketListener, SowmError> {
+    let path = &init.socket_file;
+    println!("Socket path is {}", path.display());
+    let name = path.as_path().to_fs_name::<GenericFilePath>().unwrap();
+    let opts = ListenerOptions::new().name(name);
 
     let listener = match opts.create_sync() {
         Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
@@ -53,8 +55,10 @@ pub fn listener(tx: Sender<ClientMessage>) -> ! {
         x => x.unwrap(),
     };
 
-    println!("Socket running on {}", path.display());
+    Ok(listener)
+}
 
+pub fn listener(tx: Sender<ClientMessage>, _init: Arc<Init>, listener: LocalSocketListener) -> ! {
     for conn in listener.incoming().filter_map(handle_error) {
         let mut conn = BufReader::new(conn);
         println!("Got new connection");
@@ -66,13 +70,13 @@ pub fn listener(tx: Sender<ClientMessage>) -> ! {
         let len = Packet::len_from_header(&header).unwrap();
         let mut buf = vec![0; len];
         conn.read_exact(&mut buf).unwrap();
-        let message: ClientMessage = ClientMessage::deserialize(&buf);
+        let message: ClientMessage = ClientMessage::deserialize(&buf).unwrap();
         println!("Client Sent: {message:#?}");
         tx.send(message).unwrap();
 
         // Send responce message
         let message: ServerMessage = ServerMessage::Ok;
-        let data = message.serialize();
+        let data = message.serialize().unwrap();
         println!("Sending {} + 8 bytes to the client", data.len());
         let packet = Packet::new(data);
         let bytes = packet.into_bytes();

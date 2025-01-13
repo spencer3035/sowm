@@ -1,17 +1,17 @@
 use std::{
     path::{Path, PathBuf},
-    sync::mpsc::Receiver,
+    sync::{mpsc::Receiver, Arc},
     time::Duration,
 };
 
 use rand::{seq::SliceRandom, thread_rng};
-use sowm_common::ClientMessage;
+use sowm_common::{ClientMessage, Init};
 use walkdir::WalkDir;
 
 // Example of using feh to set the background for two monitors
 // feh --no-fehbg --bg-fill girl_holding_power.jpg girl_face_in_pool.jpeg
 
-pub fn run(rx: Receiver<ClientMessage>) -> ! {
+pub fn run(_rx: Receiver<ClientMessage>, _init: Arc<Init>) -> ! {
     let dur = Duration::from_secs(60 * 30);
     let dir = PathBuf::from("/home/spencer/pictures/wallpapers");
     let mut images = get_images(&dir);
@@ -36,6 +36,7 @@ pub fn run(rx: Receiver<ClientMessage>) -> ! {
             }
         }
 
+        // TODO: Check feh exists before entering this method
         let mut cmd = std::process::Command::new("feh");
         cmd.arg("--no-fehbg").arg("--bg-fill");
         for image in selected_images.iter() {
@@ -52,12 +53,12 @@ fn get_images<P>(dir: P) -> Vec<PathBuf>
 where
     P: AsRef<Path>,
 {
-    let valid_extensions = ["jpeg", "jpg", "png"];
+    let image_extensions = ["jpeg", "jpg", "png"];
     let mut images = Vec::new();
 
     for file in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
         if let Some(ext) = file.path().extension() {
-            if valid_extensions.contains(&ext.to_ascii_lowercase().to_str().unwrap()) {
+            if image_extensions.contains(&ext.to_ascii_lowercase().to_str().unwrap()) {
                 images.push(file.path().to_owned());
             }
         }

@@ -1,17 +1,95 @@
+use directories::{BaseDirs, UserDirs};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub mod packet;
 
-pub fn get_pipe_path() -> PathBuf {
+pub struct Init {
+    pub user_directories: UserDirs,
+    pub config_directories: BaseDirs,
+    pub config_path: PathBuf,
+    pub socket_file: PathBuf,
+    pub does_socket_file_exist: bool,
+}
+
+pub fn init() -> Result<Init, SowmError> {
+    let config_directories = BaseDirs::new().ok_or(SowmError::NoHomeDirectory)?;
+    let user_directories = UserDirs::new().ok_or(SowmError::NoHomeDirectory)?;
+    let socket_file = get_socket_directory()?;
+    let does_socket_file_exist = socket_file
+        .try_exists()
+        .map_err(|_| SowmError::NoUserSocketDirectory(socket_file.clone()))?;
+    let config_path = config_path(&config_directories)?;
+
+    Ok(Init {
+        user_directories,
+        config_directories,
+        socket_file,
+        does_socket_file_exist,
+        config_path,
+    })
+}
+
+pub fn config_path(dirs: &BaseDirs) -> Result<PathBuf, SowmError> {
+    let mut dir = dirs.config_dir().to_path_buf();
+    dir.push("sowm");
+
+    if !matches!(dir.try_exists(), Ok(true)) {
+        std::fs::create_dir(&dir).map_err(|_| SowmError::NoConfigDir(dir.clone()))?;
+    }
+
+    dir.push("config.toml");
+
+    if !matches!(dir.try_exists(), Ok(true)) {
+        let conf = Config::default();
+        let str = toml::to_string_pretty(&conf).expect("Failed to seralize default config to toml");
+        std::fs::write(&dir, &str).map_err(|_| SowmError::NoConfigDir(dir.clone()))?
+    }
+
+    Ok(dir)
+}
+
+#[derive(Debug)]
+pub enum SowmError {
+    NoHomeDirectory,
+    NoUserSocketDirectory(PathBuf),
+    NoConfigDir(PathBuf),
+    SerializationFailed(bitcode::Error),
+    DeserializationFailed(bitcode::Error),
+}
+
+impl std::fmt::Display for SowmError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s: String = match self {
+            Self::NoHomeDirectory => "Could not find home directory".into(),
+            Self::NoUserSocketDirectory(path) => format!(
+                "User's socket directory didn't exist or wasn't writable: {}",
+                path.display()
+            ),
+            Self::NoConfigDir(path) => format!(
+                "User's config directory didn't exist or wasn't writable: {}",
+                path.display()
+            ),
+            Self::SerializationFailed(e) => format!("Serialization error: {e}"),
+            Self::DeserializationFailed(e) => format!("Deserialization error: {e}"),
+        };
+
+        write!(f, "{s}")
+    }
+}
+
+fn get_socket_directory() -> Result<PathBuf, SowmError> {
     let uid = users::get_current_uid();
     let mut p = PathBuf::new();
     p.push("/run");
     p.push("user");
     p.push(uid.to_string());
-    debug_assert!(p.exists(), "run path doesn't exist: {}", p.display());
+    if !matches!(p.try_exists(), Ok(true)) {
+        debug_assert!(p.exists(), "run path doesn't exist: {}", p.display());
+        return Err(SowmError::NoUserSocketDirectory(p));
+    }
     p.push("sowm.fifo");
-    p
+    Ok(p)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -23,11 +101,11 @@ pub enum ClientMessage {
 }
 
 impl ClientMessage {
-    pub fn serialize(&self) -> Vec<u8> {
-        bitcode::serialize(self).unwrap()
+    pub fn serialize(&self) -> Result<Vec<u8>, SowmError> {
+        bitcode::serialize(self).map_err(|e| SowmError::SerializationFailed(e))
     }
-    pub fn deserialize(v: &[u8]) -> Self {
-        bitcode::deserialize(v).unwrap()
+    pub fn deserialize(v: &[u8]) -> Result<Self, SowmError> {
+        bitcode::deserialize(v).map_err(|e| SowmError::DeserializationFailed(e))
     }
 }
 
@@ -40,11 +118,11 @@ pub enum ServerMessage {
 }
 
 impl ServerMessage {
-    pub fn serialize(&self) -> Vec<u8> {
-        bitcode::serialize(self).unwrap()
+    pub fn serialize(&self) -> Result<Vec<u8>, SowmError> {
+        bitcode::serialize(self).map_err(|e| SowmError::SerializationFailed(e))
     }
-    pub fn deserialize(v: &[u8]) -> Self {
-        bitcode::deserialize(v).unwrap()
+    pub fn deserialize(v: &[u8]) -> Result<Self, SowmError> {
+        bitcode::deserialize(v).map_err(|e| SowmError::DeserializationFailed(e))
     }
 }
 
@@ -83,12 +161,14 @@ mod tests {
 
     #[test]
     fn default_config_valid() {
-        assert!(Config::default().is_valid(), "Default config wasn't valid")
+        let c = Config::default();
+        assert!(c.is_valid(), "Default config wasn't valid");
+        toml::to_string(&c).expect("Failed to seralize default config to toml");
     }
 
     #[test]
     fn pipe_dir_exists() {
-        let mut path = get_pipe_path();
+        let mut path = get_socket_directory().expect("Couldn't get socket directory");
         path.pop();
         assert!(matches!(path.try_exists(), Ok(true)));
     }

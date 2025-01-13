@@ -1,8 +1,11 @@
 use clap::{Parser, Subcommand};
 use interprocess::local_socket::{prelude::*, GenericFilePath, Stream};
-use std::io::{BufReader, Read, Write};
+use std::{
+    io::{BufReader, Read, Write},
+    sync::Arc,
+};
 
-use sowm_common::{get_pipe_path, packet::Packet, ClientMessage, ServerMessage};
+use sowm_common::{init, packet::Packet, ClientMessage, ServerMessage};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -35,7 +38,12 @@ fn main() {
     let cli = Cli::parse();
     println!("{cli:#?}");
 
-    let path = get_pipe_path();
+    let init = match init() {
+        Err(e) => panic!("Init Error: {e}"),
+        Ok(v) => Arc::new(v),
+    };
+
+    let path = &init.socket_file;
     println!("Socket path is {}", path.display());
     let name = path.as_path().to_fs_name::<GenericFilePath>().unwrap();
 
@@ -44,7 +52,7 @@ fn main() {
 
     // Send message
     let message: ClientMessage = cli.command.into();
-    let data = message.serialize();
+    let data = message.serialize().unwrap();
     println!("Sending {} + 8 bytes to the server", data.len());
     let packet = Packet::new(data);
     let bytes = packet.into_bytes();
@@ -57,7 +65,7 @@ fn main() {
     let len = Packet::len_from_header(&header).unwrap();
     let mut buf = vec![0; len];
     conn.read_exact(&mut buf).unwrap();
-    let message: ServerMessage = ServerMessage::deserialize(&buf);
+    let message: ServerMessage = ServerMessage::deserialize(&buf).unwrap();
 
     println!("Server: {message:#?}");
 }
