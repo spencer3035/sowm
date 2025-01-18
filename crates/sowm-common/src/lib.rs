@@ -1,6 +1,9 @@
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 pub mod packet;
 
@@ -155,20 +158,30 @@ impl ServerMessage {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    pub switch_interval_sec: u64,
-    pub shuffle: bool,
-    pub image_dir: Option<String>,
+    switch_interval_sec: u64,
+    shuffle: bool,
+    image_dir: PathBuf,
+    num_monitors: usize,
 }
 
 impl Config {
+    /// If the config is valid or not
     pub fn is_valid(&self) -> bool {
-        if let Some(path) = self.image_dir.as_ref() {
-            let path = PathBuf::from(path);
-            println!("Path: '{}'", path.display());
-            return matches!(path.try_exists(), Ok(true));
-        }
+        matches!(self.image_dir.try_exists(), Ok(true))
+    }
 
-        true
+    /// Gets the interval that wallpapers should be switched
+    pub fn switch_interval(&self) -> Duration {
+        Duration::from_secs(self.switch_interval_sec)
+    }
+
+    /// Gets the image directory
+    pub fn image_dir(&self) -> &Path {
+        self.image_dir.as_path()
+    }
+
+    pub fn num_monitors(&self) -> usize {
+        self.num_monitors
     }
 }
 
@@ -177,7 +190,8 @@ impl Default for Config {
         Config {
             switch_interval_sec: 60 * 30,
             shuffle: true,
-            image_dir: None,
+            image_dir: ".".into(),
+            num_monitors: 1,
         }
     }
 }

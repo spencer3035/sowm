@@ -1,107 +1,128 @@
 use std::{
     path::{Path, PathBuf},
-    slice::Iter,
-    sync::{mpsc::Receiver, Arc},
+    sync::mpsc::Receiver,
     time::{Duration, Instant},
 };
 
 use rand::{seq::SliceRandom, thread_rng};
-use sowm_common::{ClientMessage, Config, Init};
+use sowm_common::{ClientMessage, Init};
 use walkdir::WalkDir;
-
-struct Engine<'a, T> {
-    images_iter: LoopingIter<'a, T>,
-    config: Config,
-    state: State,
-    wallpaper_change_dur: Duration,
-    message_poll_dur: Duration,
-}
 
 enum State {
     Running,
     Stopped,
 }
 
-pub struct LoopingIter<'a, T> {
-    arr: &'a [T],
+pub struct LoopingIter {
+    arr: Vec<PathBuf>,
     ii: usize,
 }
 
-impl<'a, T> LoopingIter<'a, T> {
-    fn new(arr: &'a [T]) -> LoopingIter<'a, T> {
+impl LoopingIter {
+    fn new(arr: Vec<PathBuf>) -> Self {
         LoopingIter { arr, ii: 0 }
     }
 }
 
-impl<'a, T> Iterator for LoopingIter<'a, T> {
-    type Item = &'a T;
+impl Iterator for LoopingIter {
+    type Item = PathBuf;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.ii >= self.arr.len() {
             self.ii = 0;
         }
-        self.arr.get(self.ii)
+        self.arr.get(self.ii).cloned()
     }
 }
 
-// Example of using feh to set the background for two monitors
-// feh --no-fehbg --bg-fill girl_holding_power.jpg girl_face_in_pool.jpeg
+struct Engine {
+    images_iter: LoopingIter,
+    state: State,
+    wallpaper_change_dur: Duration,
+    #[allow(dead_code)]
+    init: Init,
+    num_monitors: usize,
+}
 
-pub fn run(rx: Receiver<ClientMessage>, _init: Arc<Init>) -> ! {
-    let wallpaper_change_dur = Duration::from_secs(60 * 30);
-    let message_poll_dur = Duration::from_millis(100);
-    let num_monitors = 2;
+impl Engine {
+    fn new(init: Init) -> Self {
+        let wallpaper_change_dur = init.config.switch_interval();
+        let num_monitors = init.config.num_monitors();
+        let image_dir = init.config.image_dir();
 
-    let image_dir = PathBuf::from("/home/spencer/pictures/wallpapers");
+        let mut images = get_images(&image_dir);
+        images.shuffle(&mut thread_rng());
+        println!("Found {} images.", images.len());
+        let image_iter = LoopingIter::new(images);
 
-    let mut images = get_images(&image_dir);
-    images.shuffle(&mut thread_rng());
-    let mut image_iter = LoopingIter::new(&images);
+        let state = State::Running;
 
-    println!("Found {} images.", images.len());
+        Engine {
+            init,
+            images_iter: image_iter,
+            num_monitors,
+            state,
+            wallpaper_change_dur,
+        }
+    }
+
+    /// Runs the next wallpaper cycle of the engine, if it is running
+    fn cycle(&mut self) {
+        if matches!(self.state, State::Running) {
+            self.next();
+        }
+    }
+
+    /// Loads the next set of images
+    fn next(&mut self) {
+        let mut selected_images = Vec::new();
+        for _ in 0..self.num_monitors {
+            selected_images.push(self.images_iter.next().unwrap());
+        }
+        set_background(&selected_images);
+    }
+
+    /// Handles a message from the client
+    fn handle_message(&mut self, msg: ClientMessage) {
+        match msg {
+            ClientMessage::Stop => {
+                self.state = State::Stopped;
+            }
+            ClientMessage::Start => {
+                self.state = State::Running;
+            }
+            ClientMessage::Next => {
+                self.next();
+            }
+        }
+    }
+}
+
+pub fn run(rx: Receiver<ClientMessage>, init: Init) -> ! {
+    let mut engine = Engine::new(init);
     let mut start_time;
-    let mut state = State::Running;
+    let message_poll_dur = Duration::from_millis(100);
 
     loop {
         start_time = Instant::now();
 
-        if matches!(state, State::Running) {
-            let mut selected_images = Vec::new();
-            for _ in 0..num_monitors {
-                selected_images.push(image_iter.next().unwrap());
-            }
-            set_background(&selected_images);
-        }
-
-        while start_time.elapsed() <= wallpaper_change_dur {
+        engine.cycle();
+        while start_time.elapsed() <= engine.wallpaper_change_dur {
             if let Ok(msg) = rx.try_recv() {
-                match msg {
-                    ClientMessage::Stop => {
-                        state = State::Stopped;
-                    }
-                    ClientMessage::Start => {
-                        state = State::Running;
-                    }
-                    ClientMessage::Next => {
-                        let mut selected_images = Vec::new();
-                        for _ in 0..num_monitors {
-                            selected_images.push(image_iter.next().unwrap());
-                        }
-                        set_background(&selected_images);
-                    }
-                }
+                engine.handle_message(msg);
             }
             std::thread::sleep(message_poll_dur);
         }
-
-        std::thread::sleep(wallpaper_change_dur);
     }
 }
 
+/// Sets the background to the list of images. There should be as many images as there is monitors
 fn set_background<P>(selected_images: &[P])
 where
     P: AsRef<Path>,
 {
+    // Example: feh --no-fehbg --bg-fill image1.jpg image2.jpeg
+
     // TODO: Check feh exists before entering this method
     let mut cmd = std::process::Command::new("feh");
     cmd.arg("--no-fehbg").arg("--bg-fill");
@@ -113,6 +134,7 @@ where
     cmd.spawn().unwrap();
 }
 
+/// Gets all images in the provided directory, recursively
 fn get_images<P>(dir: P) -> Vec<PathBuf>
 where
     P: AsRef<Path>,

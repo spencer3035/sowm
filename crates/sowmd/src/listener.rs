@@ -1,7 +1,7 @@
 use interprocess::local_socket::{prelude::*, GenericFilePath, ListenerOptions, Stream};
 use std::{
     io::{BufReader, Read, Write},
-    sync::{mpsc::Sender, Arc},
+    sync::mpsc::Sender,
 };
 
 use sowm_common::{packet::Packet, ClientMessage, Init, ServerMessage, SowmError};
@@ -58,7 +58,7 @@ pub fn open_socket(init: &Init) -> Result<LocalSocketListener, SowmError> {
     Ok(listener)
 }
 
-pub fn listener(tx: Sender<ClientMessage>, _init: Arc<Init>, listener: LocalSocketListener) -> ! {
+pub fn listener(tx: Sender<ClientMessage>, listener: LocalSocketListener) -> ! {
     for conn in listener.incoming().filter_map(handle_error) {
         let mut conn = BufReader::new(conn);
         println!("Got new connection");

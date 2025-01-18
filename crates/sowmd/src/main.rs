@@ -1,4 +1,4 @@
-use std::sync::{mpsc::channel, Arc};
+use std::sync::mpsc::channel;
 
 use listener::{open_socket, setup_signal_handler};
 use sowm_common::init;
@@ -21,13 +21,9 @@ fn main() {
         Ok(v) => v,
     };
 
-    let init = Arc::new(init);
     let (tx, rx) = channel();
-
-    let init1 = init.clone();
-    let h1 = std::thread::spawn(move || listener::listener(tx, init1, listener));
-    let init2 = init.clone();
-    let h2 = std::thread::spawn(move || engine::run(rx, init2));
+    let h1 = std::thread::spawn(move || listener::listener(tx, listener));
+    let h2 = std::thread::spawn(move || engine::run(rx, init));
 
     h1.join().expect("Listener failed");
     println!("Listener closed");
