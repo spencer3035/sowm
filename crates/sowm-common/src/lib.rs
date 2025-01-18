@@ -123,7 +123,7 @@ fn get_socket_directory() -> Result<PathBuf, SowmError> {
 pub enum ClientMessage {
     Start,
     Stop,
-    Reset,
+    Next,
     // Add update config etc
 }
 

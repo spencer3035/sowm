@@ -20,8 +20,8 @@ enum Command {
     Start,
     /// Stop cycling wallpapers
     Stop,
-    /// Reset
-    Reset,
+    /// Go to next images
+    Next,
 }
 
 impl From<Command> for ClientMessage {
@@ -29,7 +29,7 @@ impl From<Command> for ClientMessage {
         match value {
             Command::Start => ClientMessage::Start,
             Command::Stop => ClientMessage::Stop,
-            Command::Reset => ClientMessage::Reset,
+            Command::Next => ClientMessage::Next,
         }
     }
 }
