@@ -45,7 +45,6 @@ pub fn open_socket<P>(path: P) -> Result<LocalSocketListener, SowmError>
 where
     P: AsRef<Path>,
 {
-    println!("Socket path is {}", path.as_ref().display());
     let name = path.as_ref().to_fs_name::<GenericFilePath>().unwrap();
     let opts = ListenerOptions::new().name(name);
 
@@ -74,10 +73,8 @@ where
 pub fn listener(tx: Sender<ClientMessage>, listener: LocalSocketListener) -> ! {
     for conn in listener.incoming().filter_map(handle_error) {
         let mut conn = BufReader::new(conn);
-        println!("Got new connection");
 
         // Get message
-        println!("Reading client message");
         let mut header: [u8; 8] = [0; 8];
         conn.read_exact(&mut header).unwrap();
         let len = Packet::len_from_header(&header).unwrap();
@@ -90,12 +87,9 @@ pub fn listener(tx: Sender<ClientMessage>, listener: LocalSocketListener) -> ! {
         // Send responce message
         let message: ServerMessage = ServerMessage::Ok;
         let data = message.serialize().unwrap();
-        println!("Sending {} + 8 bytes to the client", data.len());
         let packet = Packet::new(data);
         let bytes = packet.into_bytes();
         conn.get_mut().write_all(&bytes).unwrap();
-
-        println!("Server: {message:#?}");
     }
 
     panic!("Ran out of listeners");

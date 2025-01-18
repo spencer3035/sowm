@@ -52,7 +52,6 @@ impl Engine {
 
         let mut images = init.images.clone();
         images.shuffle(&mut thread_rng());
-        println!("Found {} images.", images.len());
         let image_iter = LoopingIter::new(images);
 
         let state = State::Running;
@@ -78,7 +77,6 @@ impl Engine {
         let mut selected_images = Vec::new();
         for _ in 0..self.num_monitors {
             let image = self.images_iter.next().unwrap();
-            println!("adding image {}", image.display());
             selected_images.push(image);
         }
         set_background(&selected_images);
@@ -88,15 +86,12 @@ impl Engine {
     fn handle_message(&mut self, msg: ClientMessage) {
         match msg {
             ClientMessage::Stop => {
-                println!("Stopping");
                 self.state = State::Stopped;
             }
             ClientMessage::Start => {
-                println!("Starting");
                 self.state = State::Running;
             }
             ClientMessage::Next => {
-                println!("Next wallpaper");
                 self.next();
             }
         }
@@ -137,7 +132,6 @@ where
     for image in selected_images.iter() {
         cmd.arg(image.as_ref());
     }
-    println!("setting images");
     // TODO: handle feh not found error
     cmd.spawn().unwrap();
 }

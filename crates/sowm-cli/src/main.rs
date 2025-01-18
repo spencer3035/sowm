@@ -36,7 +36,6 @@ impl From<Command> for ClientMessage {
 
 fn main() {
     let cli = Cli::parse();
-    println!("{cli:#?}");
 
     let init = match init() {
         Err(e) => panic!("Init Error: {e}"),
@@ -44,7 +43,6 @@ fn main() {
     };
 
     let path = &init.socket_file;
-    println!("Socket path is {}", path.display());
     let name = path.as_path().to_fs_name::<GenericFilePath>().unwrap();
 
     let conn = Stream::connect(name).unwrap();
@@ -53,13 +51,11 @@ fn main() {
     // Send message
     let message: ClientMessage = cli.command.into();
     let data = message.serialize().unwrap();
-    println!("Sending {} + 8 bytes to the server", data.len());
     let packet = Packet::new(data);
     let bytes = packet.into_bytes();
     conn.get_mut().write_all(&bytes).unwrap();
 
     // Get responce message
-    println!("Reading server responce");
     let mut header: [u8; 8] = [0; 8];
     conn.read_exact(&mut header).unwrap();
     let len = Packet::len_from_header(&header).unwrap();

@@ -28,10 +28,10 @@ fn main() {
 
     if let Err(_) = h2.join() {
         close_socket(&socket_file).unwrap();
-        println!("Engine thread paniced");
+        eprintln!("Engine thread paniced");
         exit(1);
     }
     //h1.join().expect("Listener failed");
-    //println!("Listener closed");
-    //println!("All threads closed, exiting")
+    //eprintln!("Listener closed");
+    //eprintln!("All threads closed, exiting")
 }
