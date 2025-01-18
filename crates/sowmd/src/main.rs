@@ -3,7 +3,9 @@ use std::sync::{mpsc::channel, Arc};
 use listener::{open_socket, setup_signal_handler};
 use sowm_common::init;
 
+/// Engine to run the logic to update the wallpaper
 mod engine;
+/// Listen for messages that get sent over the socket
 mod listener;
 
 fn main() {

@@ -1,36 +1,51 @@
-use directories::{BaseDirs, UserDirs};
+use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub mod packet;
 
+/// Contains all relevant information for communication between client and server as well as other
+/// error prone things that need to be discovered
+///
+/// Should only be created via init() method
 pub struct Init {
-    pub user_directories: UserDirs,
-    pub config_directories: BaseDirs,
+    /// Path to config toml file
     pub config_path: PathBuf,
+    /// Path to socket file
     pub socket_file: PathBuf,
+    /// If the socket file exists at the time of creation of the object. Clients should check that
+    /// this is true and server should check that this is false.
     pub does_socket_file_exist: bool,
+    /// Current configuration
+    pub config: Config,
 }
 
+/// Generates a new Init instance
 pub fn init() -> Result<Init, SowmError> {
     let config_directories = BaseDirs::new().ok_or(SowmError::NoHomeDirectory)?;
-    let user_directories = UserDirs::new().ok_or(SowmError::NoHomeDirectory)?;
     let socket_file = get_socket_directory()?;
     let does_socket_file_exist = socket_file
         .try_exists()
         .map_err(|_| SowmError::NoUserSocketDirectory(socket_file.clone()))?;
+
+    // TODO: Some of the below errors could be recoverable, we should put these in associated
+    // methods with results so that it doesn't block the server from starting for exampele
     let config_path = config_path(&config_directories)?;
+    let config_content = std::fs::read_to_string(&config_path)
+        .map_err(|_| SowmError::NoConfigDir(config_path.clone()))?;
+    let config: Config =
+        toml::from_str(&config_content).map_err(|e| SowmError::ConfigParseFail(e))?;
 
     Ok(Init {
-        user_directories,
-        config_directories,
         socket_file,
         does_socket_file_exist,
         config_path,
+        config,
     })
 }
 
-pub fn config_path(dirs: &BaseDirs) -> Result<PathBuf, SowmError> {
+/// Gets the path to the config.toml, it also creates on based on the default if it doesn't exist
+fn config_path(dirs: &BaseDirs) -> Result<PathBuf, SowmError> {
     let mut dir = dirs.config_dir().to_path_buf();
     dir.push("sowm");
 
@@ -56,6 +71,17 @@ pub enum SowmError {
     NoConfigDir(PathBuf),
     SerializationFailed(bitcode::Error),
     DeserializationFailed(bitcode::Error),
+    ConfigParseFail(toml::de::Error),
+}
+
+impl SowmError {
+    pub fn client_critical(&self) -> bool {
+        match self {
+            SowmError::NoUserSocketDirectory(_) => true,
+            SowmError::NoHomeDirectory => true,
+            _ => false,
+        }
+    }
 }
 
 impl std::fmt::Display for SowmError {
@@ -72,6 +98,7 @@ impl std::fmt::Display for SowmError {
             ),
             Self::SerializationFailed(e) => format!("Serialization error: {e}"),
             Self::DeserializationFailed(e) => format!("Deserialization error: {e}"),
+            Self::ConfigParseFail(e) => format!("Failed parsing config.toml : {e}"),
         };
 
         write!(f, "{s}")
