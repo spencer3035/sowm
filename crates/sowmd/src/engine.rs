@@ -5,8 +5,7 @@ use std::{
 };
 
 use rand::{seq::SliceRandom, thread_rng};
-use sowm_common::{ClientMessage, Init};
-use walkdir::WalkDir;
+use sowm_common::{ClientMessage, Init, SowmError};
 
 enum State {
     Running,
@@ -31,7 +30,9 @@ impl Iterator for LoopingIter {
         if self.ii >= self.arr.len() {
             self.ii = 0;
         }
-        self.arr.get(self.ii).cloned()
+        let image = self.arr.get(self.ii).cloned();
+        self.ii += 1;
+        image
     }
 }
 
@@ -45,25 +46,24 @@ struct Engine {
 }
 
 impl Engine {
-    fn new(init: Init) -> Self {
+    fn new(init: Init) -> Result<Self, SowmError> {
         let wallpaper_change_dur = init.config.switch_interval();
         let num_monitors = init.config.num_monitors();
-        let image_dir = init.config.image_dir();
 
-        let mut images = get_images(&image_dir);
+        let mut images = init.images.clone();
         images.shuffle(&mut thread_rng());
         println!("Found {} images.", images.len());
         let image_iter = LoopingIter::new(images);
 
         let state = State::Running;
 
-        Engine {
+        Ok(Engine {
             init,
             images_iter: image_iter,
             num_monitors,
             state,
             wallpaper_change_dur,
-        }
+        })
     }
 
     /// Runs the next wallpaper cycle of the engine, if it is running
@@ -77,7 +77,9 @@ impl Engine {
     fn next(&mut self) {
         let mut selected_images = Vec::new();
         for _ in 0..self.num_monitors {
-            selected_images.push(self.images_iter.next().unwrap());
+            let image = self.images_iter.next().unwrap();
+            println!("adding image {}", image.display());
+            selected_images.push(image);
         }
         set_background(&selected_images);
     }
@@ -86,12 +88,15 @@ impl Engine {
     fn handle_message(&mut self, msg: ClientMessage) {
         match msg {
             ClientMessage::Stop => {
+                println!("Stopping");
                 self.state = State::Stopped;
             }
             ClientMessage::Start => {
+                println!("Starting");
                 self.state = State::Running;
             }
             ClientMessage::Next => {
+                println!("Next wallpaper");
                 self.next();
             }
         }
@@ -99,7 +104,10 @@ impl Engine {
 }
 
 pub fn run(rx: Receiver<ClientMessage>, init: Init) -> ! {
-    let mut engine = Engine::new(init);
+    let mut engine = match Engine::new(init) {
+        Err(e) => panic!("{e}"),
+        Ok(v) => v,
+    };
     let mut start_time;
     let message_poll_dur = Duration::from_millis(100);
 
@@ -132,22 +140,4 @@ where
     println!("setting images");
     // TODO: handle feh not found error
     cmd.spawn().unwrap();
-}
-
-/// Gets all images in the provided directory, recursively
-fn get_images<P>(dir: P) -> Vec<PathBuf>
-where
-    P: AsRef<Path>,
-{
-    let image_extensions = ["jpeg", "jpg", "png"];
-    let mut images = Vec::new();
-
-    for file in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
-        if let Some(ext) = file.path().extension() {
-            if image_extensions.contains(&ext.to_ascii_lowercase().to_str().unwrap()) {
-                images.push(file.path().to_owned());
-            }
-        }
-    }
-    images
 }

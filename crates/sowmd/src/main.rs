@@ -1,6 +1,6 @@
-use std::sync::mpsc::channel;
+use std::{process::exit, sync::mpsc::channel};
 
-use listener::{open_socket, setup_signal_handler};
+use listener::{close_socket, open_socket, setup_signal_handler};
 use sowm_common::init;
 
 /// Engine to run the logic to update the wallpaper
@@ -14,21 +14,24 @@ fn main() {
         Ok(v) => v,
     };
 
-    setup_signal_handler(&init);
+    let socket_file = init.socket_file.clone();
 
-    let listener = match open_socket(&init) {
+    setup_signal_handler(&init);
+    let listener = match open_socket(&socket_file) {
         Err(e) => panic!("Socket Error: {e}"),
         Ok(v) => v,
     };
 
     let (tx, rx) = channel();
-    let h1 = std::thread::spawn(move || listener::listener(tx, listener));
+    let _h1 = std::thread::spawn(move || listener::listener(tx, listener));
     let h2 = std::thread::spawn(move || engine::run(rx, init));
 
-    h1.join().expect("Listener failed");
-    println!("Listener closed");
-    h2.join().expect("Engine failed");
-    println!("Engine thread closed");
-
-    println!("All threads closed, exiting")
+    if let Err(_) = h2.join() {
+        close_socket(&socket_file).unwrap();
+        println!("Engine thread paniced");
+        exit(1);
+    }
+    //h1.join().expect("Listener failed");
+    //println!("Listener closed");
+    //println!("All threads closed, exiting")
 }

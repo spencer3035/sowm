@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
+use walkdir::WalkDir;
 
 pub mod packet;
 
@@ -21,6 +22,8 @@ pub struct Init {
     pub does_socket_file_exist: bool,
     /// Current configuration
     pub config: Config,
+    /// All images found in the image directory
+    pub images: Vec<PathBuf>,
 }
 
 /// Generates a new Init instance
@@ -38,8 +41,13 @@ pub fn init() -> Result<Init, SowmError> {
         .map_err(|_| SowmError::NoConfigDir(config_path.clone()))?;
     let config: Config =
         toml::from_str(&config_content).map_err(|e| SowmError::ConfigParseFail(e))?;
+    let images = get_images(&config.image_dir);
+    if images.is_empty() {
+        return Err(SowmError::NoImagesFound(config.image_dir.clone()));
+    }
 
     Ok(Init {
+        images,
         socket_file,
         does_socket_file_exist,
         config_path,
@@ -75,6 +83,7 @@ pub enum SowmError {
     SerializationFailed(bitcode::Error),
     DeserializationFailed(bitcode::Error),
     ConfigParseFail(toml::de::Error),
+    NoImagesFound(PathBuf),
 }
 
 impl SowmError {
@@ -102,10 +111,29 @@ impl std::fmt::Display for SowmError {
             Self::SerializationFailed(e) => format!("Serialization error: {e}"),
             Self::DeserializationFailed(e) => format!("Deserialization error: {e}"),
             Self::ConfigParseFail(e) => format!("Failed parsing config.toml : {e}"),
+            Self::NoImagesFound(p) => format!("No images found in {}", p.display()),
         };
 
         write!(f, "{s}")
     }
+}
+
+/// Gets all images in the provided directory, recursively
+fn get_images<P>(dir: P) -> Vec<PathBuf>
+where
+    P: AsRef<Path>,
+{
+    let image_extensions = ["jpeg", "jpg", "png"];
+    let mut images = Vec::new();
+
+    for file in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+        if let Some(ext) = file.path().extension() {
+            if image_extensions.contains(&ext.to_ascii_lowercase().to_str().unwrap()) {
+                images.push(file.path().to_owned());
+            }
+        }
+    }
+    images
 }
 
 fn get_socket_directory() -> Result<PathBuf, SowmError> {
@@ -166,8 +194,12 @@ pub struct Config {
 
 impl Config {
     /// If the config is valid or not
-    pub fn is_valid(&self) -> bool {
-        matches!(self.image_dir.try_exists(), Ok(true))
+    pub fn is_valid(&self) -> Result<(), SowmError> {
+        if !matches!(self.image_dir.try_exists(), Ok(true)) {
+            return Err(SowmError::NoImagesFound(self.image_dir.clone()));
+        }
+
+        Ok(())
     }
 
     /// Gets the interval that wallpapers should be switched
@@ -175,11 +207,7 @@ impl Config {
         Duration::from_secs(self.switch_interval_sec)
     }
 
-    /// Gets the image directory
-    pub fn image_dir(&self) -> &Path {
-        self.image_dir.as_path()
-    }
-
+    /// Number of monitors in the config file
     pub fn num_monitors(&self) -> usize {
         self.num_monitors
     }
@@ -203,7 +231,7 @@ mod tests {
     #[test]
     fn default_config_valid() {
         let c = Config::default();
-        assert!(c.is_valid(), "Default config wasn't valid");
+        assert!(c.is_valid().is_ok(), "Default config wasn't valid");
         toml::to_string(&c).expect("Failed to seralize default config to toml");
     }
 

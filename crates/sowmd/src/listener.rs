@@ -1,6 +1,7 @@
 use interprocess::local_socket::{prelude::*, GenericFilePath, ListenerOptions, Stream};
 use std::{
     io::{BufReader, Read, Write},
+    path::Path,
     sync::mpsc::Sender,
 };
 
@@ -22,18 +23,30 @@ pub fn setup_signal_handler(init: &Init) {
     let path = init.socket_file.to_path_buf();
     ctrlc::set_handler(move || {
         println!("\nremoving socket: {}", path.display());
-        if matches!(path.try_exists(), Ok(true)) {
-            std::fs::remove_file(&path).unwrap();
-        }
+        close_socket(&path).unwrap();
         std::process::exit(0);
     })
     .expect("Signal handler should only be called once");
 }
 
-pub fn open_socket(init: &Init) -> Result<LocalSocketListener, SowmError> {
-    let path = &init.socket_file;
-    println!("Socket path is {}", path.display());
-    let name = path.as_path().to_fs_name::<GenericFilePath>().unwrap();
+pub fn close_socket<P>(path: P) -> Result<(), SowmError>
+where
+    P: AsRef<Path>,
+{
+    if matches!(path.as_ref().try_exists(), Ok(true)) {
+        std::fs::remove_file(&path)
+            .map_err(|_| SowmError::NoUserSocketDirectory(path.as_ref().to_path_buf()))?;
+    }
+
+    Ok(())
+}
+
+pub fn open_socket<P>(path: P) -> Result<LocalSocketListener, SowmError>
+where
+    P: AsRef<Path>,
+{
+    println!("Socket path is {}", path.as_ref().display());
+    let name = path.as_ref().to_fs_name::<GenericFilePath>().unwrap();
     let opts = ListenerOptions::new().name(name);
 
     let listener = match opts.create_sync() {
@@ -49,7 +62,7 @@ pub fn open_socket(init: &Init) -> Result<LocalSocketListener, SowmError> {
             // up to the user, but in a real application, you usually don't want to do that.
             panic!(
                 "Error: could not start server because the socket file is occupied. Please check if {} is in use by another process and try again.",
-                path.display()
+                path.as_ref().display()
             );
         }
         x => x.unwrap(),
