@@ -5,8 +5,9 @@ use std::{
 };
 
 use rand::{seq::SliceRandom, thread_rng};
-use sowm_common::{ClientMessage, Init, SowmError};
+use sowm_common::{ClientMessage, Init};
 
+#[derive(Debug, Clone)]
 enum State {
     Running,
     Stopped,
@@ -46,23 +47,22 @@ struct Engine {
 }
 
 impl Engine {
-    fn new(init: Init) -> Result<Self, SowmError> {
+    fn new(init: Init) -> Self {
+        let mut images = init.images.clone();
         let wallpaper_change_dur = init.config.switch_interval();
         let num_monitors = init.config.num_monitors();
-
-        let mut images = init.images.clone();
         images.shuffle(&mut thread_rng());
         let image_iter = LoopingIter::new(images);
 
         let state = State::Running;
 
-        Ok(Engine {
+        Engine {
             init,
             images_iter: image_iter,
             num_monitors,
             state,
             wallpaper_change_dur,
-        })
+        }
     }
 
     /// Runs the next wallpaper cycle of the engine, if it is running
@@ -94,15 +94,17 @@ impl Engine {
             ClientMessage::Next => {
                 self.next();
             }
+            ClientMessage::Update(init) => {
+                let state = self.state.clone();
+                *self = Engine::new(init);
+                self.state = state;
+            }
         }
     }
 }
 
 pub fn run(rx: Receiver<ClientMessage>, init: Init) -> ! {
-    let mut engine = match Engine::new(init) {
-        Err(e) => panic!("{e}"),
-        Ok(v) => v,
-    };
+    let mut engine = Engine::new(init);
     let mut start_time;
     let message_poll_dur = Duration::from_millis(100);
 

@@ -12,6 +12,7 @@ pub mod packet;
 /// error prone things that need to be discovered
 ///
 /// Should only be created via init() method
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Init {
     /// Path to config toml file
     pub config_path: PathBuf,
@@ -41,6 +42,7 @@ pub fn init() -> Result<Init, SowmError> {
         .map_err(|_| SowmError::NoConfigDir(config_path.clone()))?;
     let config: Config =
         toml::from_str(&config_content).map_err(|e| SowmError::ConfigParseFail(e))?;
+    config.is_valid()?;
     let images = get_images(&config.image_dir);
     if images.is_empty() {
         return Err(SowmError::NoImagesFound(config.image_dir.clone()));
@@ -155,7 +157,7 @@ pub enum ClientMessage {
     Start,
     Stop,
     Next,
-    // Add update config etc
+    Update(Init),
 }
 
 impl ClientMessage {
